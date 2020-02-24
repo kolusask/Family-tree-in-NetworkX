@@ -36,7 +36,7 @@ class FamilyTree:
 
     def _construct_automaton(self):
         """
-        Builds a self._auto digraph which is later used as an automaton in _analyse_path method.
+        Builds a self._auto digraph which is later used as an automaton in _analyze_path method.
         """
         familyDict = {
             "self":             {"CHILD":"child", "PARENT":"parent", "MARRIED":"spouse"},
@@ -113,7 +113,7 @@ class FamilyTree:
             path = nx.shortest_path(self._graph, p1, p2)
         except:
             raise Exception("{} and {} are not relatives".format(per1, per2))
-        return self._analyse_path(path, p2[1])
+        return self._analyze_path(path, p2[1])
 
     def _get_edges_from_path(self, path):
         """
@@ -125,7 +125,7 @@ class FamilyTree:
                 yield self._graph[current][node]['label']
                 current = node
 
-    def _analyse_path(self, path, gender):
+    def _analyze_path(self, path, gender):
         """
         This method uses digraph constructed in _construct_automaton() as an automaton accepting the           edges of the passed path as an input sequence.
         """
