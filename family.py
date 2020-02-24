@@ -1,24 +1,34 @@
 from hashlib import md5
 import networkx as nx
 import json
-    
+
 
 class FamilyTree:
     """
     A class representing a simple database of a family.
     Each person is represented by a tuple (name, gender).
-    Must be initialized with the family founder.
-    New members can be added as children or spouses of existing members.
+    New members can be added as children orspouses of existing members or independently.
     Supports finding the relation between any two family members.
     Can be saved to / loaded from a json file.
     """
-    def __init__(self, name, gender):
-        self._graph = nx.DiGraph()
-        self._graph.add_node((name, gender))
+    def __init__(self, jsonfile=None):
+        """
+        Constructor creates an empty tree if nothing is passed, loads the json definition otherwise.
+        """
+        if jsonfile is None:
+            self._graph = nx.DiGraph()
+        else:
+            with open(jsonfile, 'r') as file:
+                data = json.loads(file.read())
+                self._graph = nx.node_link_graph(data)
         self._construct_automaton()
+    
+    def add_person(self, name, gender):
+        if not gender in ("male", "female"):
+            raise Exception("Person's gender must be 'male' or 'female' - not '{}'".format(gender))
+        self._graph.add_node((name, gender))
         
     def _add_edge(self, n1, n2, label):
-        print((n1, n2))
         for n in n1, n2:
             if not n[1] in ("male", "female"):
                 raise Exception("Person's gender must be 'male' or 'female' - not '{}'".format(n[1]))
@@ -34,12 +44,12 @@ class FamilyTree:
             "parent":           {"CHILD":"sibling", "PARENT":"grandparent"},
             "spouse":           {"PARENT":"parent-in-law"},
             "parent-in-law":    {"CHILD":"sibling-in-law"},
+            "sibling-in-law":   {"CHILD":"nephew/niece"},
             "grandchild":       {"MARRIED":"grandchild-in-law"},
             "sibling":          {"CHILD":"nephew/niece", "MARRIED":"sibling-in-law"},
             "grandparent":      {"CHILD":"uncle/aunt", "PARENT":"grandgrandparent"},
             "uncle/aunt":       {"CHILD":"cousin", "MARRIED":"uncle/aunt"},
-            "grandgrandparent": {"CHILD":"grandaunt"},
-            "sibling-in-law":   {"CHILD":"nephew/niece", "PARENT":"parent-in-law","MARRIED":"sibling-in-law"},
+            "grandgrandparent": {"CHILD":"grandaunt"}
         }
         self._auto = nx.DiGraph()
         for st1 in familyDict.keys():
@@ -81,8 +91,6 @@ class FamilyTree:
                     raise Exception("{} is already married to {}".format(p, spouse))
         if found == 0:
             raise Exception("Neither {} nor {} are in the family".format(per1[0], per2[0]))
-        if found == 2:
-            raise Exception("{} and {} cannot be married - they are relatives".format(per1[0], per2[0]))
         self._add_edge(per1, per2, "MARRIED")
         self._add_edge(per2, per1, "MARRIED")
         
@@ -99,10 +107,13 @@ class FamilyTree:
         """
         for per in (per1, per2):
             if not per in (n[0] for n in self._graph.nodes()):
-                return "No {} in this family".format(per)
+                raise Exception("No {} in this family".format(per))
         p1, p2 = (self._find_person(per) for per in (per1, per2))
-        path = nx.shortest_path(self._graph, p1, p2)
-        return self._analyse_path(path, p1[1])
+        try:
+            path = nx.shortest_path(self._graph, p1, p2)
+        except:
+            raise Exception("{} and {} are not relatives".format(per1, per2))
+        return self._analyse_path(path, p2[1])
 
     def _get_edges_from_path(self, path):
         """
@@ -135,8 +146,10 @@ class FamilyTree:
             "grandparent":      ("grandfather", "grandmother"),
             "uncle/aunt":       ("uncle", "aunt"),
             "grandgrandparent": ("grandgrandfather", "grandgrandmother"),
-            "sibling-in-law":   ("brother-in-law", "sister-in-law")
-        }.get(state, "far relative")[{"male":0, "female":1}.get(gender)]
+            "sibling-in-law":   ("brother-in-law", "sister-in-law"),
+            "child-in-law":     ("son-in-law", "daughter-in-law"),
+            "nephew/niece":     ("nephew", "niece")
+        }.get(state, tuple("far relative" for _ in range(2)))[{"male":0, "female":1}.get(gender)]
     
     def draw(self):
         """
@@ -145,14 +158,14 @@ class FamilyTree:
         Edges:  black for parent-child relations, red for marriage
         """
         marryedges = tuple(filter(lambda e : e[2] == 'MARRIED', self._graph.edges(data="label")))
-        parentedges = tuple(filter(lambda e : e[2] == 'PARENT', self._graph.edges(data="label")))
+        childedges = tuple(filter(lambda e : e[2] == 'CHILD', self._graph.edges(data="label")))
         males=tuple(filter(lambda n : n[1] == 'male', self._graph.nodes()))
         females=tuple(filter(lambda n : n[1] == 'female', self._graph.nodes()))
         pos = nx.drawing.layout.kamada_kawai_layout(self._graph)
         nx.draw_networkx_nodes(self._graph, pos, males, with_labels=True, node_color='b')
         nx.draw_networkx_nodes(self._graph, pos, females, with_labels=True, node_color='r')
         nx.draw_networkx_edges(self._graph, pos, marryedges, edge_color='r')
-        nx.draw_networkx_edges(self._graph, pos, parentedges)
+        nx.draw_networkx_edges(self._graph, pos, childedges)
         nx.draw_networkx_labels(self._graph, pos, {n:n[0] for n in self._graph.nodes()})
     
     def save(self, filename):
@@ -162,14 +175,34 @@ class FamilyTree:
         with open(filename, 'w') as file:
             file.write(json.dumps(nx.node_link_data(self._graph)))
 
+# got = FamilyTree()
+# got.add_person("Rickard Stark", "male")
+# got.marry(("Rickard Stark", "male"), ("Lyarra Stark", "female"))
+# got.have_child("Eddard Stark", "male", "Rickard Stark")
+# got.marry(("Eddard Stark", "male"), ("Catelyn Stark", "female"))
+# got.have_child("Robb Stark", "male", "Eddard Stark")
+# got.have_child("Sansa Stark", "female", "Eddard Stark")
+# got.have_child("Arya Stark", "female", "Eddard Stark")
+# got.have_child("Brandon Stark", "male", "Eddard Stark")
+# got.have_child("Rickon Stark", "male", "Eddard Stark")
+# got.have_child("Benjen Stark", "male", "Rickard Stark")
+# got.have_child("Lyanna Stark", "female", "Rickard Stark")
+# got.add_person("Aerys II Targaryen", "male")
+# got.marry(("Aerys II Targaryen", "male"), ("Rhaella Targaryen", "female"))
+# got.have_child("Rhaegar Targaryen", "male", "Rhaella Targaryen")
+# got.have_child("Viserys Targaryen", "male", "Rhaella Targaryen")
+# got.have_child("Daenerys Targaryen", "female", "Rhaella Targaryen")
+# got.marry(("Lyanna Stark", "female"), ("Rhaegar Targaryen", "male"))
+# got.have_child("Jon Snow", "male", "Lyanna Stark")
+# got.add_person("Tywin Lannister", "male")
+# got.marry(("Tywin Lannister", "male"), ("Joanna Lannister", "female"))
+# got.have_child("Jaime Lannister", "male", "Tywin Lannister")
+# got.have_child("Cersei Lannister", "female", "Tywin Lannister")
+# got.have_child("Tyrion Lannister", "male", "Tywin Lannister")
+# got.marry(("Robert Baratheon", "male"), ("Cersei Lannister", "female"))
+# got.have_child("Joffrey Baratheon", "male", "Robert Baratheon")
+# got.have_child("Myrcella Baratheon", "female", "Robert Baratheon")
+# got.have_child("Tommen Baratheon", "male", "Robert Baratheon")
+# got.save("game_of_thrones.json")
 
-def load_json(filename):
-    """
-    Returns an instance of FamilyTree with a graph defined in 'filenamr' with json format
-    """
-    data = dict()
-    with open(filename, 'r') as file:
-        data = json.loads(file.read())
-    ret = FamilyTree("", "")
-    ret._graph = nx.node_link_graph(data)
-    return ret
+# got.draw()
