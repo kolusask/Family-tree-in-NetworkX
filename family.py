@@ -16,6 +16,13 @@ class FamilyTree:
         self._graph = nx.DiGraph()
         self._graph.add_node((name, gender))
         self._construct_automaton()
+        
+    def _add_edge(self, n1, n2, label):
+        print((n1, n2))
+        for n in n1, n2:
+            if not n[1] in ("male", "female"):
+                raise Exception("Person's gender must be 'male' or 'female' - not '{}'".format(n[1]))
+        self._graph.add_edge(n1, n2, label=label)
 
     def _construct_automaton(self):
         """
@@ -40,7 +47,7 @@ class FamilyTree:
                 st2 = familyDict[st1][lbl]
                 self._auto.add_edge(st1, st2, label=lbl)
     
-    def give_birth(self, name, gender, pname):
+    def have_child(self, name, gender, pname):
         """
         Adds a new member as a child of existing members
         Arguments:
@@ -56,30 +63,28 @@ class FamilyTree:
         parent2 = next(e for e in self._graph.out_edges(parent1, data="label") if e[2] == 'MARRIED')[1]
         child = (name, gender)
         for p in parent1, parent2:
-            self._graph.add_edge(child, p, label="PARENT")
-            self._graph.add_edge(p, child, label="CHILD")
+            self._add_edge(child, p, "PARENT")
+            self._add_edge(p, child, "CHILD")
         
-    def marry(self, hname, wname):
+    def marry(self, per1, per2):
         """
         Adds a new family member as a spouse of an existing one
         Receives husband's and wife's names as hname and wname arguments respectively.
         Exactly one of the two must be a member of the family before calling the method.
         """
-        husband = (hname, 'male')
-        wife = (wname, 'female')
         found = 0
-        for p in husband, wife:
+        for p in per1, per2:
             if p in self._graph.nodes():
                 found += 1
                 if "MARRIED" in (e[2] for e in self._graph.out_edges(p, data="label")):
                     spouse = self._graph.out_edges(p)["MARRIED"][1]
                     raise Exception("{} is already married to {}".format(p, spouse))
         if found == 0:
-            raise Exception("Neither {} nor {} are in the family".format(hname, wname))
+            raise Exception("Neither {} nor {} are in the family".format(per1[0], per2[0]))
         if found == 2:
-            raise Exception("{} and {} cannot be married - they are relatives".format(hname, wname))
-        self._graph.add_edge(husband, wife, label='MARRIED')
-        self._graph.add_edge(wife, husband, label='MARRIED')
+            raise Exception("{} and {} cannot be married - they are relatives".format(per1[0], per2[0]))
+        self._add_edge(per1, per2, "MARRIED")
+        self._add_edge(per2, per1, "MARRIED")
         
     def _find_person(self, name):
         """
